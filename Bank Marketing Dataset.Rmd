@@ -1,0 +1,308 @@
+---
+title: "Bank Marketing Dataset"
+author: "Krystal Cai"
+date: "2025-11-10"
+output:
+  pdf_document: default
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Introduction
+
+The **Bank Marketing Dataset** is a publicly available dataset that originates from a Portuguese banking institution, created by Paulo Cortez and Sérgio Moro in 2012. The dataset is designed to support research in direct marketing, specifically the campaigns used by the bank to promote term deposit subscriptions through phone calls. As the campaigns often required multiple contacts with the same client to assess their interest in subscribing to a term deposit, this dataset provides a rich set of features related to both the client information and the marketing campaigns.
+
+The dataset contains two main files:
+1. **bank-full.csv** - This file contains a comprehensive set of examples, ordered by date (from May 2008 to November 2010), with 45,211 instances.
+2. **bank.csv** - A smaller sample, containing 10% of the data (4,521 instances), which is typically used for testing computationally intensive machine learning algorithms such as Support Vector Machines (SVM).
+
+The goal of the dataset is to predict whether a client will subscribe to a term deposit (binary classification). The classification target is represented by the attribute `y`, where the value "yes" indicates the client subscribed to the term deposit, and "no" indicates they did not.
+
+The dataset includes 16 input attributes, covering a range of demographic and marketing-related factors such as age, job type, marital status, previous contact details, and campaign outcomes. This dataset offers an excellent opportunity for exploring data mining techniques and building predictive models in the context of customer behavior analysis in marketing.
+
+**Attribute Information**:
+The dataset includes 16 input variables such as:
+- Client’s **age**, **job type**, and **marital status**.
+- Financial information such as **balance**, **housing loan**, and **personal loan**.
+- Details of the most recent marketing contact, including the **contact type**, **duration of the call**, and the **month** of the contact.
+- Data from the previous marketing campaigns, including the **number of previous contacts**, the **outcome of the prior campaign**, and the **number of days since the last contact**.
+
+The dataset does not have any missing values, making it ready for use in a wide range of data analysis tasks. It has been widely used for research in data mining, machine learning, and customer segmentation.
+
+
+
+```{r}
+bank<-read.csv("~/Desktop/bank marketing/data/bank-full.csv",sep=";", stringsAsFactors=TRUE)
+head(bank)
+```
+
+
+```{r}
+#check N/A data
+sum(is.na(bank))
+#check the data stru and types
+str(bank)
+# check charterers type levels
+levels(bank$job)
+levels(bank$marital)
+levels(bank$education)
+
+summary(bank)
+```
+
+```{r}
+library(ggplot2)
+ggplot(bank, aes(x=y)) + 
+  geom_bar() + 
+  labs(title="Distribution of Subscription (y)", x="Subscribed", y="Count")
+```
+
+```{r}
+ggplot(bank, aes(x=age, fill=y)) + 
+  geom_histogram(binwidth=2, alpha=0.5, position="identity") + 
+  labs(title="Age Distribution by Subscription", x="Age", y="Count")
+```
+
+```{r}
+#Resampling
+#Oversampling
+library(caret)
+bank_oversampled <- upSample(x = bank[, -17], y = bank$y)
+#Undersampling
+bank_undersampled <- downSample(x = bank[, -17], y = bank$y)
+```
+
+```{r}
+#Adjust class weights
+library(randomForest)
+rf_model <- randomForest(y ~ ., data=bank, classwt=c("no"=1, "yes"=10))
+```
+
+```{r}
+#set the random seed
+set.seed(123)
+#Split the dataset into 80% training set and 20% test set.
+library(caret)
+trainIndex <- createDataPartition(bank$y, p = 0.8, list = FALSE)
+trainData <- bank[trainIndex, ]
+testData <- bank[-trainIndex, ]
+head(trainData)
+head(testData)
+```
+
+```{r}
+#Train a logistic regression model.
+model <- glm(y ~ ., data = trainData, family = "binomial")
+#Use the model to make predictions on the test set (return probabilities).
+predictions <- predict(model, testData, type = "response")
+#Convert the predicted probabilities into categories (with a threshold of 0.5).
+predictions_class <- ifelse(predictions > 0.5, "yes", "no")
+head(predictions_class)
+```
+
+```{r}
+#Ensure that the predicted results and the true labels are factor types.
+predictions_class <- factor(predictions_class, levels = c("no", "yes"))
+testData$y <- factor(testData$y, levels = c("no", "yes"))
+#check their stru
+str(predictions_class)
+str(testData$y)
+#Calculate the confusion matrix
+library(caret)
+confusionMatrix(predictions_class, testData$y)
+```
+
+
+
+
+
+
+```{r}
+#Calculate auc
+library(ROCR)
+pred <- prediction(predictions, testData$y)
+auc <- performance(pred, "auc")
+auc@y.values[[1]]
+```
+```{r}
+predictions_class <- factor(predictions_class, levels = c("no", "yes"))
+testData$y <- factor(testData$y, levels = c("no", "yes"))
+conf_matrix <- confusionMatrix(predictions_class, testData$y)
+#print(conf_matrix)
+testData$y <- factor(testData$y, levels = c("no", "yes"))
+conf_matrix <- confusionMatrix(predictions_class, testData$y)
+#print(conf_matrix)
+```
+
+```{r}
+#Adjust the threshold to 0.5
+predictions_class <- ifelse(predictions > 0.5, "yes", "no")
+predictions_class <- factor(predictions_class, levels = c("no", "yes"))
+testData$y <- factor(testData$y, levels = c("no", "yes"))
+#Calculate new confusion matrix
+conf_matrix <- confusionMatrix(predictions_class, testData$y)
+print(conf_matrix)
+```
+
+```{r}
+# Step 1: Threshold Optimization
+
+library(caret)
+
+thresholds <- seq(0.1, 0.9, by = 0.05)
+results <- data.frame()
+
+for (t in thresholds) {
+  pred_class <- ifelse(predictions > t, "yes", "no")
+  pred_class <- factor(pred_class, levels = c("no", "yes"))
+  
+  cm <- confusionMatrix(pred_class, testData$y)$byClass
+  
+  results <- rbind(results, data.frame(
+    Threshold = t,
+    Sensitivity = cm["Sensitivity"],   # no
+    Specificity = cm["Specificity"]    # yes
+  ))
+}
+
+print(results)
+
+```
+
+```{r}
+library(pROC)
+
+roc_obj <- roc(testData$y, predictions)
+
+best_cutoff <- coords(roc_obj, "best", ret = "threshold", best.method = "youden")
+
+best_cutoff
+
+```
+
+###Optimal Threshold Selection
+
+Both the grid-based threshold scanning and the ROC Youden Index analysis consistently indicate that the optimal decision threshold lies around **0.10**. Specifically, the Youden Index identifies the best cutoff at approximately **0.1028**, which aligns closely with the threshold range that maximizes the model’s ability to detect the positive class (subscription = yes).
+
+This result suggests that **using a threshold near 0.10 provides the best balance between sensitivity and specificity**, allowing the model to more effectively identify potential subscribers while maintaining an acceptable trade-off in overall classification performance.
+
+
+
+```{r}
+importance_rf <- importance(rf_model)
+varImpPlot(rf_model)
+importance_rf
+```
+### Feature Importance Analysis
+
+The Random Forest model provides a ranked list of predictors based on the **Mean Decrease in Gini**, representing each variable’s contribution to reducing node impurity. The results indicate clear differences in predictive strength across features:
+
+**duration** shows by far the highest importance (MeanDecreaseGini \textasciitilde 2886), confirming that the duration of the last phone contact is the strongest predictor of whether a client subscribes to a term deposit.
+
+Other highly influential features include:
+
+**month** (\textasciitilde 786)
+
+**balance** (\textasciitilde 617)
+
+**day** (\textasciitilde 496)
+
+**job** (\textasciitilde 548)
+
+Medium-importance predictors include:
+
+**contact, campaign, pdays, education, housing, poutcome**
+
+Variables with minimal contribution include:
+
+**default, loan, previous**
+
+These findings are consistent with previous studies using this dataset, where call duration and campaign timing variables are known to play a major role in predicting term-deposit subscription behavior.
+
+```{r}
+log_model <- glm(y ~ ., data = trainData, family = binomial)
+log_pred <- predict(log_model, newdata = testData, type = "response")
+log_auc <- roc(testData$y, log_pred)$auc
+log_auc
+
+```
+```{r}
+cm <- confusionMatrix(factor(pred_class, levels = c("no", "yes")),
+                      factor(testData$y, levels = c("no", "yes")))
+
+cm
+```
+```{r}
+library(pROC)
+predictions_prob <- predict(rf_model, newdata = testData, type = "prob")[, "yes"]
+roc_obj <- roc(testData$y, predictions_prob, levels = c("no", "yes"))
+auc_value <- auc(roc_obj)
+auc_value
+plot(roc_obj, main = "ROC Curve for Random Forest Model")
+
+```
+**Model Performance Evaluation**
+
+We evaluated the model's performance on the testing dataset using several common classification metrics.
+The confusion matrix shows the distribution of correct and incorrect predictions for both classes, while the ROC-AUC score quantifies the overall discriminative power of the model.
+
+**Confusion Matrix:** Provides accuracy, sensitivity (true positive rate), specificity (true negative rate), and class-wise performance.
+
+**AUC (Area Under the ROC Curve):** Measures how well the model separates the positive class (“yes”) from the negative class (“no”).
+AUC values closer to 1 indicate stronger discriminative performance.
+
+The ROC curve was also plotted to visualize the trade-off between sensitivity and specificity across all probability thresholds.
+
+
+
+### Business Insights & Recommendations
+
+1 Key Drivers of Subscription (from Feature Importance)
+
+From the Random Forest model, the most influential factors for predicting whether a client subscribes to a term deposit are:
+
+- Duration of last call (duration): the longer the call, the higher the likelihood of subscription.
+- Contact month (month): timing affects client responsiveness.
+- Average yearly balance (balance): wealthier clients are more likely to subscribe.
+- Day of contact (day): some days are more effective than others.
+- Client job, campaign count, and contact type (job, campaign, contact): demographics and campaign strategy also influence subscription rates.
+
+“Call duration, contact timing, and client financial status are the strongest predictors of deposit subscription, indicating that both engagement quality and strategic targeting are critical for marketing success.”
+
+2 Threshold Optimization and Business Impact
+
+Using the ROC and Youden Index, we identified an optimal classification threshold of 0.10.
+
+At this threshold, the model captures more potential subscribers (high recall for positive class) with a moderate drop in specificity.
+
+This aligns with marketing objectives: missing a potential subscriber is costlier than contacting a non-subscriber.
+
+“Adjusting the decision threshold improves the identification of high-potential clients, maximizing marketing efficiency and ensuring resources are directed toward the most promising prospects.”
+
+3 Practical Recommendations for Bank Marketing
+
+- Prioritize High-Impact Months  
+  Focus marketing efforts in months identified as most effective (month variable).
+
+- Improve Call Engagement  
+  Encourage longer and more interactive calls to increase subscription likelihood (duration).
+
+- Target High-Value Clients  
+  Segment clients by balance and tailor offers to higher-balance segments.
+
+- Multi-Channel Communication  
+  Utilize cellular contacts over telephone/unknown channels to improve reach (contact).
+
+- Customer Scoring and Resource Allocation  
+  Use predicted probabilities from the model to stratify clients:  
+    - High score (>0.5): direct, personalized follow-up  
+    - Medium score (0.1–0.5): automated follow-up, secondary engagement  
+    - Low score (<0.1): minimal resource allocation
+
+“By integrating model insights into the campaign strategy, the bank can optimize resource allocation, increase subscription rates, and enhance overall marketing ROI.”
+
+
+
