@@ -1,4 +1,4 @@
-# Bank Marketing Analysis
+# Bank Marketing Analysis（销售数据分析和流程优化）
 
 This repository contains the analysis of the Bank Marketing dataset from UCI Machine Learning Repository. 
 
